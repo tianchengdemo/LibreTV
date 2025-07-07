@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: libretv
+    name: zhe.bi
     runtime: node
     plan: free
     buildCommand: 'npm install'

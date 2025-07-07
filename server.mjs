@@ -183,11 +183,50 @@ app.get('/proxy/:encodedUrl', async (req, res) => {
     response.data.pipe(res);
   } catch (error) {
     console.error('代理请求错误:', error.message);
-    if (error.response) {
-      res.status(error.response.status || 500);
+    
+    // 更详细的错误分类和处理
+    let statusCode = 500;
+    let errorMessage = '代理请求失败';
+    
+    if (error.code === 'ECONNRESET') {
+      statusCode = 503;
+      errorMessage = '目标服务器连接重置，请稍后重试';
+    } else if (error.code === 'ENOTFOUND') {
+      statusCode = 502;
+      errorMessage = '无法解析目标域名';
+    } else if (error.code === 'ETIMEDOUT' || error.message.includes('timeout')) {
+      statusCode = 504;
+      errorMessage = '请求超时，目标服务器响应过慢';
+    } else if (error.response) {
+      statusCode = error.response.status;
+      switch (statusCode) {
+        case 403:
+          errorMessage = '目标服务器拒绝访问，可能需要更换数据源';
+          break;
+        case 429:
+          errorMessage = '请求过于频繁，请稍后重试';
+          break;
+        case 502:
+        case 503:
+        case 504:
+          errorMessage = '目标服务器暂时不可用，请尝试其他数据源';
+          break;
+        default:
+          errorMessage = `目标服务器返回错误 ${statusCode}`;
+      }
+    }
+    
+    log(`代理错误详情: ${errorMessage} (${error.message})`);
+    
+    if (error.response && error.response.data) {
+      res.status(statusCode);
       error.response.data.pipe(res);
     } else {
-      res.status(500).send(`请求失败: ${error.message}`);
+      res.status(statusCode).json({
+        error: errorMessage,
+        code: error.code || 'PROXY_ERROR',
+        timestamp: new Date().toISOString()
+      });
     }
   }
 });
